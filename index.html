@@ -14,12 +14,14 @@
   <link rel="stylesheet" href="arcade-expansion.css">
   <link rel="stylesheet" href="arcade-music.css">
   <link rel="stylesheet" href="navigation-shell.css">
+  <link rel="stylesheet" href="game-animations.css">
   <script type="module" src="app.js" defer></script>
   <script type="module">
     import { installSystemApps } from './system-apps.js';
     import { installArcadeExpansion } from './arcade-expansion.js';
     import { installArcadeMusic } from './arcade-music.js';
     import { installNavigationShell } from './navigation-shell.js';
+    import { installGameAnimations } from './game-animations.js';
     if (localStorage.getItem('arcadeos:sound') === null) localStorage.setItem('arcadeos:sound', 'true');
     const install = () => {
       if (!window.ArcadeOS) return requestAnimationFrame(install);
@@ -27,6 +29,7 @@
       installArcadeExpansion(window.ArcadeOS);
       installArcadeMusic(window.ArcadeOS);
       installNavigationShell(window.ArcadeOS);
+      installGameAnimations(window.ArcadeOS);
     };
     install();
   </script>
