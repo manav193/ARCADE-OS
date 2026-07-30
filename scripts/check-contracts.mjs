@@ -1,7 +1,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = resolve(new URL('..', import.meta.url).pathname);
+const root = fileURLToPath(new URL('..', import.meta.url));
 const requiredFiles = [
   'index.html','app.js','styles.css','system-apps.js','arcade-expansion.js','arcade-music.js',
   'game-controls.js','nimo-overdrive.js','cheat-score-guard.js','navigation-shell.js','game-animations.js',
@@ -37,7 +38,7 @@ if (!failures.length) {
   expect(app.includes('window.ArcadeOS='), 'Base runtime does not expose window.ArcadeOS');
   expect(music.includes('installNimoOverdrive(ArcadeOS)'), 'Music bootstrap does not install NIMO Overdrive');
   expect(music.includes('installCheatScoreGuard(ArcadeOS)'), 'Music bootstrap does not install cheat score guard');
-  expect(scoreGuard.includes("sessionStorage"), 'Cheat score guard does not isolate modified scores');
+  expect(scoreGuard.includes('sessionStorage'), 'Cheat score guard does not isolate modified scores');
   expect(scoreGuard.includes('shouldBlockScore'), 'Cheat score guard does not consult Overdrive state');
   expect(navigation.includes('ArcadeOS.navigation'), 'Navigation service is not exposed');
   expect(animations.includes('ArcadeOS.animations'), 'Animation service is not exposed');
