@@ -54,7 +54,9 @@ export function installGameAnimations(ArcadeOS) {
     const particles = Array.from({ length: 12 }, (_, index) => {
       const x = 7 + index * 7;
       const y = 12 + index * 6;
-      return `<i style="--i:${index};--x:${x}%;--y:${y}%"></i>`;
+      const duration = (3 + index * .22).toFixed(2);
+      const delay = (-index * .31).toFixed(2);
+      return `<i style="--x:${x}%;--y:${y}%;--duration:${duration}s;--delay:${delay}s"></i>`;
     }).join('');
     layer.innerHTML = `
       <div class="game-animation-intro" data-game-animation-intro>
