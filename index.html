@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#050816">
+  <meta name="description" content="ArcadeOS — a browser-based arcade operating system by Manav Agarwal.">
+  <title>ArcadeOS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js" defer></script>
+</head>
+<body>
+  <div class="boot" data-boot>
+    <div class="boot__mark">A</div>
+    <p>ARCADEOS // INITIALIZING</p>
+    <div class="boot__bar"><span></span></div>
+  </div>
+
+  <main class="desktop" data-desktop aria-label="ArcadeOS desktop">
+    <div class="wallpaper" aria-hidden="true"><i></i><i></i><i></i></div>
+
+    <header class="topbar">
+      <button class="brand" data-open="about" aria-label="Open ArcadeOS information"><span>A</span> ARCADEOS</button>
+      <div class="topbar__status"><span class="status-dot"></span><span data-status>ONLINE</span><time data-clock>00:00</time></div>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">BROWSER OPERATING SYSTEM</p>
+      <h1>PLAY.<br><span>BUILD.</span><br>EXPLORE.</h1>
+      <p>A standalone arcade workspace with draggable windows, local persistence and built-in mini applications.</p>
+      <button class="primary" data-open="library">OPEN APP LIBRARY <span>↗</span></button>
+    </section>
+
+    <section class="desktop-icons" aria-label="Desktop applications">
+      <button class="desktop-icon" data-open="library"><b>▦</b><span>Library</span></button>
+      <button class="desktop-icon" data-open="terminal"><b>&gt;_</b><span>Terminal</span></button>
+      <button class="desktop-icon" data-open="notes"><b>✦</b><span>Notes</span></button>
+      <button class="desktop-icon" data-open="settings"><b>⚙</b><span>Settings</span></button>
+    </section>
+
+    <section class="window-layer" data-window-layer aria-live="polite"></section>
+
+    <nav class="dock" aria-label="ArcadeOS dock">
+      <button data-open="library" title="App Library">▦</button>
+      <button data-open="terminal" title="Terminal">&gt;_</button>
+      <button data-open="snake" title="Neon Snake">◉</button>
+      <button data-open="notes" title="Notes">✦</button>
+      <button data-open="settings" title="Settings">⚙</button>
+    </nav>
+  </main>
+
+  <template id="window-template">
+    <article class="os-window">
+      <header class="window-bar" data-drag-handle>
+        <div><span class="window-icon"></span><strong class="window-title"></strong></div>
+        <div class="window-actions"><button data-minimize aria-label="Minimize">—</button><button data-maximize aria-label="Maximize">□</button><button data-close aria-label="Close">×</button></div>
+      </header>
+      <div class="window-content"></div>
+    </article>
+  </template>
+
+  <noscript>ArcadeOS requires JavaScript.</noscript>
+</body>
+</html>
