@@ -22,7 +22,7 @@ export function installGameAnimations(ArcadeOS) {
   ArcadeOS.bus?.addEventListener('cheat:command', event => pulse(event.detail?.gameId, 'command'));
 
   document.addEventListener('keydown', event => {
-    const active = [...sessions.values()].find(session => !session.win.classList.contains('is-min'));
+    const active = getFocusedSession();
     if (!active || event.repeat) return;
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','w','a','s','d'].includes(event.key)) pulse(active.id, 'input');
   });
@@ -37,6 +37,12 @@ export function installGameAnimations(ArcadeOS) {
   const api = { mount, pulse, finish, reset, themes: GAME_THEMES };
   ArcadeOS.animations = api;
   if (ArcadeOS.services) ArcadeOS.services.animations = api;
+
+  function getFocusedSession() {
+    return [...sessions.values()]
+      .filter(session => session.win.isConnected && !session.win.classList.contains('is-min'))
+      .sort((a, b) => (Number.parseInt(b.win.style.zIndex, 10) || 0) - (Number.parseInt(a.win.style.zIndex, 10) || 0))[0] || null;
+  }
 
   function mount(id) {
     const win = document.querySelector(`.os-window[data-app="${id}"]`);
