@@ -1,0 +1,14 @@
+{
+  "name": "arcade-os",
+  "version": "2.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:syntax": "node scripts/check-syntax.mjs",
+    "check:contracts": "node scripts/check-contracts.mjs",
+    "test": "npm run check:syntax && npm run check:contracts"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
