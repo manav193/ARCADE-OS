@@ -2,17 +2,24 @@
 
 ArcadeOS is a standalone browser-based arcade operating system by **Manav Agarwal**.
 
-It turns a normal webpage into a compact desktop environment with draggable application windows, local persistence, visual themes, a command shell and playable mini-apps.
+It turns a webpage into a compact desktop environment with draggable application windows, local persistence, visual themes, a command shell and playable mini-apps.
 
-## Included
+## Core 2.0
 
-- Desktop-style window manager
-- App library and dock
-- Interactive terminal
+The first migration phase separated ArcadeOS from the portfolio. Core 2.0 begins the deeper product migration with an independent application runtime:
+
+- Registry-driven application system
+- System event bus
+- Namespaced local-first storage adapter
+- Draggable, focusable, minimizable and maximizable windows
+- Safe application cleanup lifecycle
+- Terminal app launcher commands
 - Persistent Notes application
-- System configuration and theme controls
-- Neon Snake game
-- Responsive desktop/mobile layout
+- Theme, motion and storage controls
+- Neon Snake
+- Neon Breakout
+- Neon Pong with system AI
+- Responsive static deployment
 - Zero-framework HTML, CSS and JavaScript architecture
 
 ## Run locally
@@ -25,21 +32,39 @@ npx serve .
 
 Then open the local URL printed by the server.
 
+## Terminal commands
+
+```text
+help
+apps
+about
+date
+theme
+open snake
+open breakout
+open pong
+open notes
+clear
+```
+
 ## Deploy
 
-The repository can be deployed directly as a static project on Vercel, Netlify, Cloudflare Pages or GitHub Pages.
+The repository can be deployed directly as a static project on Vercel, Netlify, Cloudflare Pages or GitHub Pages. `vercel.json` is included.
 
 ## Architecture
 
 ```text
-index.html   Desktop shell and window template
+index.html   Standalone desktop shell and window template
 styles.css   Visual system, windows, dock and applications
-app.js       Window manager, state, terminal and mini-app logic
+app.js       Registry, event bus, storage, window manager and apps
+vercel.json  Static deployment configuration
 ```
 
-## Origin
+The public runtime exposes `window.ArcadeOS` with `openApp`, `registerApp`, `registry`, `bus` and `storage`, allowing future applications to be plugged in without rewriting the desktop shell.
 
-ArcadeOS began as the flagship interactive experience inside Manav's portfolio. This repository contains the independent standalone edition so the product can evolve without coupling its release cycle to the portfolio.
+## Migration status
+
+ArcadeOS began as the flagship interactive experience inside Manav's portfolio. This repository now contains an independent functional edition. The current phase migrates product capabilities rather than copying portfolio-specific navigation and presentation code. Additional legacy games, cabinet hardware controls and developer tooling can now be ported against the standalone registry.
 
 ## Author
 
