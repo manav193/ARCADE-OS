@@ -16,7 +16,6 @@ export function installGameAnimations(ArcadeOS) {
     if (!GAME_THEMES[id]) return;
     requestAnimationFrame(() => mount(id));
   });
-
   ArcadeOS.bus?.addEventListener('app:closed', event => destroy(event.detail?.id));
   ArcadeOS.bus?.addEventListener('game:score', event => finish(event.detail?.id, event.detail?.score));
   ArcadeOS.bus?.addEventListener('cheat:modifier', event => pulse(event.detail?.gameId, 'modifier'));
@@ -52,27 +51,30 @@ export function installGameAnimations(ArcadeOS) {
     const layer = document.createElement('div');
     layer.className = `game-animation-layer game-animation-layer--${theme.motion}`;
     layer.dataset.gameAnimationLayer = id;
+    const particles = Array.from({ length: 12 }, (_, index) => {
+      const x = 7 + index * 7;
+      const y = 12 + index * 6;
+      return `<i style="--i:${index};--x:${x}%;--y:${y}%"></i>`;
+    }).join('');
     layer.innerHTML = `
       <div class="game-animation-intro" data-game-animation-intro>
         <span>${theme.glyph}</span><strong>${theme.label}</strong><small>SESSION LINK ESTABLISHED</small>
       </div>
       <div class="game-animation-grid" aria-hidden="true"></div>
-      <div class="game-animation-particles" aria-hidden="true">${Array.from({length:12},(_,i)=>`<i style="--i:${i}"></i>`).join('')}</div>
+      <div class="game-animation-particles" aria-hidden="true">${particles}</div>
       <div class="game-animation-status" data-game-animation-status><span>LIVE</span><b>00:00</b></div>
       <div class="game-animation-flash" data-game-animation-flash></div>
     `;
     host.appendChild(layer);
 
-    const startedAt = performance.now();
-    const timer = setInterval(() => {
-      const elapsed = Math.max(0, Math.floor((performance.now() - startedAt) / 1000));
+    const session = { id, win, layer, timer: null, pulseTimer: null, introTimer: null, startedAt: performance.now() };
+    session.timer = setInterval(() => {
+      const elapsed = Math.max(0, Math.floor((performance.now() - session.startedAt) / 1000));
       const time = layer.querySelector('[data-game-animation-status] b');
-      if (time) time.textContent = `${String(Math.floor(elapsed / 60)).padStart(2,'0')}:${String(elapsed % 60).padStart(2,'0')}`;
+      if (time && !win.classList.contains('game-anim-finished')) time.textContent = `${String(Math.floor(elapsed / 60)).padStart(2,'0')}:${String(elapsed % 60).padStart(2,'0')}`;
     }, 1000);
-
-    const session = { id, win, layer, timer };
     sessions.set(id, session);
-    setTimeout(() => layer.querySelector('[data-game-animation-intro]')?.classList.add('is-hidden'), 1250);
+    session.introTimer = setTimeout(() => layer.querySelector('[data-game-animation-intro]')?.classList.add('is-hidden'), 1250);
     pulse(id, 'launch');
   }
 
@@ -106,6 +108,7 @@ export function installGameAnimations(ArcadeOS) {
   function reset(id) {
     const session = sessions.get(id);
     if (!session) return;
+    session.startedAt = performance.now();
     session.win.classList.remove('game-anim-finished');
     const status = session.layer.querySelector('[data-game-animation-status]');
     if (status) status.innerHTML = '<span>LIVE</span><b>00:00</b>';
@@ -117,6 +120,7 @@ export function installGameAnimations(ArcadeOS) {
     if (!session) return;
     clearInterval(session.timer);
     clearTimeout(session.pulseTimer);
+    clearTimeout(session.introTimer);
     sessions.delete(id);
   }
 }
