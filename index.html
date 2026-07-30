@@ -18,6 +18,7 @@
     import { installSystemApps } from './system-apps.js';
     import { installArcadeExpansion } from './arcade-expansion.js';
     import { installArcadeMusic } from './arcade-music.js';
+    if (localStorage.getItem('arcadeos:sound') === null) localStorage.setItem('arcadeos:sound', 'true');
     const install = () => {
       if (!window.ArcadeOS) return requestAnimationFrame(install);
       installSystemApps(window.ArcadeOS);
