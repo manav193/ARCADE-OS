@@ -4,18 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#050816">
-  <meta name="description" content="ArcadeOS — a standalone browser-based arcade operating system by Manav Agarwal.">
+  <meta name="description" content="ArcadeOS — a browser-based arcade operating system by Manav Agarwal.">
   <title>ArcadeOS</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="system-apps.css">
   <script type="module" src="app.js" defer></script>
+  <script type="module">
+    import { installSystemApps } from './system-apps.js';
+    const install = () => window.ArcadeOS ? installSystemApps(window.ArcadeOS) : requestAnimationFrame(install);
+    install();
+  </script>
 </head>
 <body>
   <div class="boot" data-boot>
     <div class="boot__mark">A</div>
-    <p>ARCADEOS // INITIALIZING CORE 2.0</p>
+    <p>ARCADEOS // INITIALIZING</p>
     <div class="boot__bar"><span></span></div>
   </div>
 
@@ -24,22 +30,20 @@
 
     <header class="topbar">
       <button class="brand" data-open="about" aria-label="Open ArcadeOS information"><span>A</span> ARCADEOS</button>
-      <div class="topbar__status"><span class="status-dot"></span><span data-status>CORE 2.0 ONLINE</span><time data-clock>00:00</time></div>
+      <div class="topbar__status"><span class="status-dot"></span><span data-status>ONLINE</span><time data-clock>00:00</time></div>
     </header>
 
     <section class="hero">
-      <p class="eyebrow">STANDALONE BROWSER OPERATING SYSTEM</p>
+      <p class="eyebrow">BROWSER OPERATING SYSTEM</p>
       <h1>PLAY.<br><span>BUILD.</span><br>EXPLORE.</h1>
-      <p>An independent arcade workspace with a registry-driven runtime, draggable windows, local persistence and playable built-in applications.</p>
+      <p>A standalone arcade workspace with draggable windows, local persistence and built-in mini applications.</p>
       <button class="primary" data-open="library">OPEN APP LIBRARY <span>↗</span></button>
     </section>
 
     <section class="desktop-icons" aria-label="Desktop applications">
       <button class="desktop-icon" data-open="library"><b>▦</b><span>Library</span></button>
-      <button class="desktop-icon" data-open="terminal"><b>&gt;_</b><span>Terminal</span></button>
-      <button class="desktop-icon" data-open="snake"><b>◉</b><span>Snake</span></button>
-      <button class="desktop-icon" data-open="breakout"><b>▤</b><span>Breakout</span></button>
-      <button class="desktop-icon" data-open="pong"><b>↔</b><span>Pong</span></button>
+      <button class="desktop-icon" data-open="developer"><b>⌘</b><span>Developer</span></button>
+      <button class="desktop-icon" data-open="diagnostics"><b>⌁</b><span>Diagnostics</span></button>
       <button class="desktop-icon" data-open="settings"><b>⚙</b><span>Settings</span></button>
     </section>
 
@@ -49,9 +53,7 @@
       <button data-open="library" title="App Library">▦</button>
       <button data-open="terminal" title="Terminal">&gt;_</button>
       <button data-open="snake" title="Neon Snake">◉</button>
-      <button data-open="breakout" title="Neon Breakout">▤</button>
-      <button data-open="pong" title="Neon Pong">↔</button>
-      <button data-open="notes" title="Notes">✦</button>
+      <button data-open="developer" title="Developer Mode">⌘</button>
       <button data-open="settings" title="Settings">⚙</button>
     </nav>
   </main>
