@@ -11,10 +11,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="system-apps.css">
+  <link rel="stylesheet" href="arcade-expansion.css">
   <script type="module" src="app.js" defer></script>
   <script type="module">
     import { installSystemApps } from './system-apps.js';
-    const install = () => window.ArcadeOS ? installSystemApps(window.ArcadeOS) : requestAnimationFrame(install);
+    import { installArcadeExpansion } from './arcade-expansion.js';
+    const install = () => {
+      if (!window.ArcadeOS) return requestAnimationFrame(install);
+      installSystemApps(window.ArcadeOS);
+      installArcadeExpansion(window.ArcadeOS);
+    };
     install();
   </script>
 </head>
@@ -36,14 +42,14 @@
     <section class="hero">
       <p class="eyebrow">BROWSER OPERATING SYSTEM</p>
       <h1>PLAY.<br><span>BUILD.</span><br>EXPLORE.</h1>
-      <p>A standalone arcade workspace with draggable windows, local persistence and built-in mini applications.</p>
+      <p>A standalone arcade workspace with draggable windows, local persistence, developer services and built-in games.</p>
       <button class="primary" data-open="library">OPEN APP LIBRARY <span>↗</span></button>
     </section>
 
     <section class="desktop-icons" aria-label="Desktop applications">
       <button class="desktop-icon" data-open="library"><b>▦</b><span>Library</span></button>
       <button class="desktop-icon" data-open="developer"><b>⌘</b><span>Developer</span></button>
-      <button class="desktop-icon" data-open="diagnostics"><b>⌁</b><span>Diagnostics</span></button>
+      <button class="desktop-icon" data-open="services"><b>◇</b><span>Services</span></button>
       <button class="desktop-icon" data-open="settings"><b>⚙</b><span>Settings</span></button>
     </section>
 
@@ -52,7 +58,8 @@
     <nav class="dock" aria-label="ArcadeOS dock">
       <button data-open="library" title="App Library">▦</button>
       <button data-open="terminal" title="Terminal">&gt;_</button>
-      <button data-open="snake" title="Neon Snake">◉</button>
+      <button data-open="blockdrop" title="Block Drop">▦</button>
+      <button data-open="stats" title="System Stats">▥</button>
       <button data-open="developer" title="Developer Mode">⌘</button>
       <button data-open="settings" title="Settings">⚙</button>
     </nav>
