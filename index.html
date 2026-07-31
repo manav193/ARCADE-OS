@@ -22,6 +22,7 @@
     import { installArcadeMusic } from './arcade-music.js';
     import { installNavigationShell } from './navigation-shell.js';
     import { installGameAnimations } from './game-animations.js';
+    import { installWindowStateSync } from './window-state-sync.js';
     if (localStorage.getItem('arcadeos:sound') === null) localStorage.setItem('arcadeos:sound', 'true');
     const install = () => {
       if (!window.ArcadeOS) return requestAnimationFrame(install);
@@ -30,6 +31,7 @@
       installArcadeMusic(window.ArcadeOS);
       installNavigationShell(window.ArcadeOS);
       installGameAnimations(window.ArcadeOS);
+      installWindowStateSync(window.ArcadeOS);
     };
     install();
   </script>
