@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const requiredFiles = [
   'index.html','app.js','styles.css','system-apps.js','arcade-expansion.js','arcade-music.js',
   'game-controls.js','nimo-overdrive.js','cheat-score-guard.js','navigation-shell.js','game-animations.js',
-  'window-state-sync.js','navigation-shell.css','game-animations.css'
+  'window-state-sync.js','input-ownership-guard.js','navigation-shell.css','game-animations.css'
 ];
 
 const failures = [];
@@ -23,15 +23,17 @@ if (!failures.length) {
   const animations = read('game-animations.js');
   const animationStyles = read('game-animations.css');
   const windowState = read('window-state-sync.js');
+  const inputGuard = read('input-ownership-guard.js');
   const overdrive = read('nimo-overdrive.js');
   const scoreGuard = read('cheat-score-guard.js');
 
-  for (const asset of ['navigation-shell.css','game-animations.css','navigation-shell.js','game-animations.js','window-state-sync.js']) {
+  for (const asset of ['navigation-shell.css','game-animations.css','navigation-shell.js','game-animations.js','window-state-sync.js','input-ownership-guard.js']) {
     expect(html.includes(asset), `index.html does not load ${asset}`);
   }
   for (const installer of ['installSystemApps','installArcadeExpansion','installArcadeMusic','installNavigationShell','installGameAnimations','installWindowStateSync']) {
     expect(html.includes(`${installer}(window.ArcadeOS)`), `Missing installer call: ${installer}`);
   }
+  expect(html.indexOf('input-ownership-guard.js') < html.indexOf('app.js'), 'Input ownership guard must load before app.js');
   for (const id of ['snake','breakout','pong','blockdrop','voidinvaders','vectordrift']) {
     expect(navigation.includes(`'${id}'`), `Navigation is missing game: ${id}`);
     expect(animations.includes(`${id}:`), `Animation theme is missing game: ${id}`);
@@ -51,6 +53,11 @@ if (!failures.length) {
   expect(windowState.includes("new CustomEvent('window:state'"), 'Window state changes are not broadcast');
   expect(windowState.includes("toggleAttribute('inert'"), 'Minimized windows are not removed from keyboard interaction');
   expect(windowState.includes('document.title ='), 'Focused application is not reflected in the document title');
+  expect(inputGuard.includes('global.addEventListener = function guardedAdd'), 'Game input listeners are not ownership-guarded');
+  expect(inputGuard.includes("type === 'keyup'"), 'Key releases are not preserved for inactive games');
+  expect(inputGuard.includes('activeWindow() !== owner'), 'Inactive game windows can still receive keydown input');
+  expect(inputGuard.includes('document.hidden'), 'Hidden tabs can still send game input');
+  expect(inputGuard.includes('global.ArcadeOS.inputGuard = api'), 'Input guard service is not exposed');
   expect(!html.includes('SELFYY'), 'Private SELFYY reference leaked into ArcadeOS');
 }
 
