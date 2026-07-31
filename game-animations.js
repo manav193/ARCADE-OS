@@ -10,6 +10,8 @@ const GAME_THEMES = {
 export function installGameAnimations(ArcadeOS) {
   if (!ArcadeOS || ArcadeOS.animations) return;
   const sessions = new Map();
+  const windowLayer = document.querySelector('[data-window-layer]');
+  let observer = null;
 
   ArcadeOS.bus?.addEventListener('app:opened', event => {
     const id = event.detail?.id;
@@ -20,6 +22,17 @@ export function installGameAnimations(ArcadeOS) {
   ArcadeOS.bus?.addEventListener('game:score', event => finish(event.detail?.id, event.detail?.score));
   ArcadeOS.bus?.addEventListener('cheat:modifier', event => pulse(event.detail?.gameId, 'modifier'));
   ArcadeOS.bus?.addEventListener('cheat:command', event => pulse(event.detail?.gameId, 'command'));
+
+  document.addEventListener('visibilitychange', syncAllSessions);
+  window.addEventListener('pagehide', destroyAll, { once: true });
+
+  if (windowLayer) {
+    observer = new MutationObserver(records => {
+      if (!records.some(record => record.type === 'childList' || record.attributeName === 'class')) return;
+      syncAllSessions();
+    });
+    observer.observe(windowLayer, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  }
 
   document.addEventListener('keydown', event => {
     const active = getFocusedSession();
@@ -34,13 +47,23 @@ export function installGameAnimations(ArcadeOS) {
     if (GAME_THEMES[id]) setTimeout(() => reset(id), 0);
   });
 
-  const api = { mount, pulse, finish, reset, themes: GAME_THEMES };
+  const api = {
+    mount,
+    pulse,
+    finish,
+    reset,
+    pause: id => setPaused(id, true),
+    resume: id => setPaused(id, false),
+    sync: syncAllSessions,
+    getSession: id => sessions.get(id) || null,
+    themes: GAME_THEMES
+  };
   ArcadeOS.animations = api;
   if (ArcadeOS.services) ArcadeOS.services.animations = api;
 
   function getFocusedSession() {
     return [...sessions.values()]
-      .filter(session => session.win.isConnected && !session.win.classList.contains('is-min'))
+      .filter(session => session.win.isConnected && !session.paused && !session.win.classList.contains('is-min'))
       .sort((a, b) => (Number.parseInt(b.win.style.zIndex, 10) || 0) - (Number.parseInt(a.win.style.zIndex, 10) || 0))[0] || null;
   }
 
@@ -75,20 +98,42 @@ export function installGameAnimations(ArcadeOS) {
     `;
     host.appendChild(layer);
 
-    const session = { id, win, layer, timer: null, pulseTimer: null, introTimer: null, startedAt: performance.now() };
-    session.timer = setInterval(() => {
-      const elapsed = Math.max(0, Math.floor((performance.now() - session.startedAt) / 1000));
-      const time = layer.querySelector('[data-game-animation-status] b');
-      if (time && !win.classList.contains('game-anim-finished')) time.textContent = `${String(Math.floor(elapsed / 60)).padStart(2,'0')}:${String(elapsed % 60).padStart(2,'0')}`;
-    }, 1000);
+    const session = {
+      id,
+      win,
+      layer,
+      timer: null,
+      pulseTimer: null,
+      introTimer: null,
+      startedAt: performance.now(),
+      elapsedBeforePause: 0,
+      paused: false,
+      finished: false
+    };
     sessions.set(id, session);
+    startTimer(session);
     session.introTimer = setTimeout(() => layer.querySelector('[data-game-animation-intro]')?.classList.add('is-hidden'), 1250);
+    syncSession(session);
     pulse(id, 'launch');
+  }
+
+  function startTimer(session) {
+    clearInterval(session.timer);
+    session.timer = setInterval(() => updateElapsed(session), 1000);
+    updateElapsed(session);
+  }
+
+  function updateElapsed(session) {
+    if (session.paused || session.finished || !session.win.isConnected) return;
+    const elapsed = session.elapsedBeforePause + Math.max(0, performance.now() - session.startedAt);
+    const seconds = Math.floor(elapsed / 1000);
+    const time = session.layer.querySelector('[data-game-animation-status] b');
+    if (time) time.textContent = `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
   }
 
   function pulse(id, type = 'input') {
     const session = sessions.get(id);
-    if (!session) return;
+    if (!session || session.paused || document.hidden) return;
     const flash = session.layer.querySelector('[data-game-animation-flash]');
     session.layer.dataset.pulse = type;
     session.win.classList.remove('game-anim-pulse');
@@ -107,6 +152,8 @@ export function installGameAnimations(ArcadeOS) {
   function finish(id, score = 0) {
     const session = sessions.get(id);
     if (!session) return;
+    updateElapsed(session);
+    session.finished = true;
     session.win.classList.add('game-anim-finished');
     const status = session.layer.querySelector('[data-game-animation-status]');
     if (status) status.innerHTML = `<span>COMPLETE</span><b>${Number(score || 0)}</b>`;
@@ -117,10 +164,42 @@ export function installGameAnimations(ArcadeOS) {
     const session = sessions.get(id);
     if (!session) return;
     session.startedAt = performance.now();
+    session.elapsedBeforePause = 0;
+    session.finished = false;
     session.win.classList.remove('game-anim-finished');
     const status = session.layer.querySelector('[data-game-animation-status]');
     if (status) status.innerHTML = '<span>LIVE</span><b>00:00</b>';
+    syncSession(session);
     pulse(id, 'launch');
+  }
+
+  function setPaused(id, paused) {
+    const session = sessions.get(id);
+    if (!session || session.paused === paused) return;
+    if (paused) {
+      if (!session.finished) session.elapsedBeforePause += Math.max(0, performance.now() - session.startedAt);
+      session.paused = true;
+      clearInterval(session.timer);
+      session.timer = null;
+      clearTimeout(session.pulseTimer);
+      session.win.classList.remove('game-anim-pulse');
+      session.layer.classList.add('is-session-paused');
+      session.layer.querySelector('[data-game-animation-flash]')?.classList.remove('is-active');
+    } else {
+      session.paused = false;
+      session.startedAt = performance.now();
+      session.layer.classList.remove('is-session-paused');
+      if (!session.finished) startTimer(session);
+    }
+  }
+
+  function syncSession(session) {
+    const shouldPause = document.hidden || !session.win.isConnected || session.win.classList.contains('is-min');
+    setPaused(session.id, shouldPause);
+  }
+
+  function syncAllSessions() {
+    sessions.forEach(session => syncSession(session));
   }
 
   function destroy(id) {
@@ -130,5 +209,10 @@ export function installGameAnimations(ArcadeOS) {
     clearTimeout(session.pulseTimer);
     clearTimeout(session.introTimer);
     sessions.delete(id);
+  }
+
+  function destroyAll() {
+    observer?.disconnect();
+    sessions.forEach((_, id) => destroy(id));
   }
 }
