@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const requiredFiles = [
   'index.html','app.js','styles.css','system-apps.js','arcade-expansion.js','arcade-music.js',
   'game-controls.js','nimo-overdrive.js','cheat-score-guard.js','navigation-shell.js','game-animations.js',
-  'navigation-shell.css','game-animations.css'
+  'window-state-sync.js','navigation-shell.css','game-animations.css'
 ];
 
 const failures = [];
@@ -21,13 +21,15 @@ if (!failures.length) {
   const music = read('arcade-music.js');
   const navigation = read('navigation-shell.js');
   const animations = read('game-animations.js');
+  const animationStyles = read('game-animations.css');
+  const windowState = read('window-state-sync.js');
   const overdrive = read('nimo-overdrive.js');
   const scoreGuard = read('cheat-score-guard.js');
 
-  for (const asset of ['navigation-shell.css','game-animations.css','navigation-shell.js','game-animations.js']) {
+  for (const asset of ['navigation-shell.css','game-animations.css','navigation-shell.js','game-animations.js','window-state-sync.js']) {
     expect(html.includes(asset), `index.html does not load ${asset}`);
   }
-  for (const installer of ['installSystemApps','installArcadeExpansion','installArcadeMusic','installNavigationShell','installGameAnimations']) {
+  for (const installer of ['installSystemApps','installArcadeExpansion','installArcadeMusic','installNavigationShell','installGameAnimations','installWindowStateSync']) {
     expect(html.includes(`${installer}(window.ArcadeOS)`), `Missing installer call: ${installer}`);
   }
   for (const id of ['snake','breakout','pong','blockdrop','voidinvaders','vectordrift']) {
@@ -42,6 +44,13 @@ if (!failures.length) {
   expect(scoreGuard.includes('shouldBlockScore'), 'Cheat score guard does not consult Overdrive state');
   expect(navigation.includes('ArcadeOS.navigation'), 'Navigation service is not exposed');
   expect(animations.includes('ArcadeOS.animations'), 'Animation service is not exposed');
+  expect(animations.includes("document.addEventListener('visibilitychange', syncAllSessions)"), 'Animations do not suspend when the page is hidden');
+  expect(animations.includes("session.win.classList.contains('is-min')"), 'Animations do not suspend minimized sessions');
+  expect(animationStyles.includes('animation-play-state:paused'), 'Paused sessions do not suspend CSS animation work');
+  expect(windowState.includes('ArcadeOS.windowState = api'), 'Window state service is not exposed');
+  expect(windowState.includes("new CustomEvent('window:state'"), 'Window state changes are not broadcast');
+  expect(windowState.includes("toggleAttribute('inert'"), 'Minimized windows are not removed from keyboard interaction');
+  expect(windowState.includes('document.title ='), 'Focused application is not reflected in the document title');
   expect(!html.includes('SELFYY'), 'Private SELFYY reference leaked into ArcadeOS');
 }
 
