@@ -62,11 +62,12 @@
     }
   });
 
+  function attach(){
+    if(!global.ArcadeOS) return global.requestAnimationFrame(attach);
+    global.ArcadeOS.inputGuard = api;
+    if(global.ArcadeOS.services) global.ArcadeOS.services.inputGuard = api;
+  }
+
   global.ArcadeInputGuard = api;
-  document.addEventListener('arcadeos:ready', () => {
-    if(global.ArcadeOS){
-      global.ArcadeOS.inputGuard = api;
-      if(global.ArcadeOS.services) global.ArcadeOS.services.inputGuard = api;
-    }
-  }, {once:true});
+  attach();
 })(window);
