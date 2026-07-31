@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="arcade-music.css">
   <link rel="stylesheet" href="navigation-shell.css">
   <link rel="stylesheet" href="game-animations.css">
+  <script src="input-ownership-guard.js"></script>
   <script type="module" src="app.js" defer></script>
   <script type="module">
     import { installSystemApps } from './system-apps.js';
@@ -42,31 +43,25 @@
     <p>ARCADEOS // INITIALIZING</p>
     <div class="boot__bar"><span></span></div>
   </div>
-
   <main class="desktop" data-desktop aria-label="ArcadeOS desktop">
     <div class="wallpaper" aria-hidden="true"><i></i><i></i><i></i></div>
-
     <header class="topbar">
       <button class="brand" data-open="about" aria-label="Open ArcadeOS information"><span>A</span> ARCADEOS</button>
       <div class="topbar__status"><span class="status-dot"></span><span data-status>ONLINE</span><time data-clock>00:00</time></div>
     </header>
-
     <section class="hero">
       <p class="eyebrow">BROWSER OPERATING SYSTEM</p>
       <h1>PLAY.<br><span>BUILD.</span><br>EXPLORE.</h1>
       <p>A standalone arcade workspace with draggable windows, local persistence, developer services and built-in games.</p>
       <button class="primary" data-open="library">OPEN APP LIBRARY <span>↗</span></button>
     </section>
-
     <section class="desktop-icons" aria-label="Desktop applications">
       <button class="desktop-icon" data-open="library"><b>▦</b><span>Library</span></button>
       <button class="desktop-icon" data-open="developer"><b>⌘</b><span>Developer</span></button>
       <button class="desktop-icon" data-open="music"><b>♪</b><span>Music</span></button>
       <button class="desktop-icon" data-open="settings"><b>⚙</b><span>Settings</span></button>
     </section>
-
     <section class="window-layer" data-window-layer aria-live="polite"></section>
-
     <nav class="dock" aria-label="ArcadeOS dock">
       <button data-open="library" title="App Library">▦</button>
       <button data-open="terminal" title="Terminal">&gt;_</button>
@@ -77,7 +72,6 @@
       <button data-open="settings" title="Settings">⚙</button>
     </nav>
   </main>
-
   <template id="window-template">
     <article class="os-window">
       <header class="window-bar" data-drag-handle>
@@ -87,7 +81,6 @@
       <div class="window-content"></div>
     </article>
   </template>
-
   <noscript>ArcadeOS requires JavaScript.</noscript>
 </body>
 </html>
