@@ -72,17 +72,25 @@
       remaining: Math.max(0, Number(delay) || 0),
       startedAt: performance.now(),
       nativeId: 0,
-      cancelled: false
+      cancelled: false,
+      paused: false
     };
 
     const poll = () => {
       if (task.cancelled) return;
       const now = performance.now();
       if (isPaused(owner)) {
-        task.remaining = Math.max(0, task.remaining - (now - task.startedAt));
+        if (!task.paused) {
+          task.remaining = Math.max(0, task.remaining - (now - task.startedAt));
+          task.paused = true;
+        }
         task.startedAt = now;
         task.nativeId = nativeSetTimeout(poll, 100);
         return;
+      }
+      if (task.paused) {
+        task.paused = false;
+        task.startedAt = now;
       }
       if (task.remaining > 0) {
         const elapsed = now - task.startedAt;
