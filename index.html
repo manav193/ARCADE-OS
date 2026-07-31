@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="arcade-music.css">
   <link rel="stylesheet" href="navigation-shell.css">
   <link rel="stylesheet" href="game-animations.css">
+  <link rel="stylesheet" href="workspace-session.css">
   <script src="input-ownership-guard.js"></script>
   <script type="module" src="app.js" defer></script>
   <script type="module">
@@ -24,6 +25,7 @@
     import { installNavigationShell } from './navigation-shell.js';
     import { installGameAnimations } from './game-animations.js';
     import { installWindowStateSync } from './window-state-sync.js';
+    import { installWorkspaceSession } from './workspace-session.js';
     if (localStorage.getItem('arcadeos:sound') === null) localStorage.setItem('arcadeos:sound', 'true');
     const install = () => {
       if (!window.ArcadeOS) return requestAnimationFrame(install);
@@ -33,6 +35,7 @@
       installNavigationShell(window.ArcadeOS);
       installGameAnimations(window.ArcadeOS);
       installWindowStateSync(window.ArcadeOS);
+      installWorkspaceSession(window.ArcadeOS);
     };
     install();
   </script>
