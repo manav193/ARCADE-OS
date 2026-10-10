@@ -47,20 +47,30 @@ Every application is defined by an `AppManifest` object:
 ## 2. Security & Permission Model
 
 ### Declared Capabilities
-* **`storage`**: Scoped read/write access to namespaced persistence (`arcadeos:app:<id>:<key>`). Does not allow access to other apps or system keys.
-* **`audio`**: Synthesized procedural audio triggers via `ArcadeOS.audio.play(soundName)`.
-* **`notifications`**: Emitting desktop toast notices via the system toaster.
+* **`storage`**: Scoped read/write access to namespaced persistence (`arcadeos:app:<id>:<key>`). Does not allow access to other apps or system keys. Keys must match `/^[a-zA-Z0-9_-]{1,64}$/`. Values are capped at 64 KB per item.
+* **`audio`**: Synthesized procedural audio triggers via `ArcadeOS.audio.play(soundName)`. Allowed sounds: `['launch', 'confirm', 'score', 'hit', 'gameover', 'blip', 'select']`.
+* **`notifications`**: Emitting desktop toast notices via the system toaster. Strings are clamped to 120 characters and sanitized.
 * **`bus`**: Observing non-privileged system bus lifecycle events.
-* **`system`**: Restricted to built-in system components. Cannot be granted to extensions.
+* **`system`**: Restricted to built-in system components. Cannot be requested or held by extensions.
 
 ### Origin Isolation vs Same-Origin Limits
 * **Sandboxed Extensions (`type: 'sandboxed'`)**:
   * Executed inside `<iframe sandbox="allow-scripts">` **without** `allow-same-origin`.
   * The browser enforces an opaque origin (`null`). The iframe cannot touch parent window DOM, parent cookies, `localStorage`, or other apps.
   * All host capabilities are mediated exclusively by a validated `postMessage` RPC bridge.
+  * **Source Window Authentication**: The host verifies that `event.source` strictly matches the `contentWindow` of the mounted iframe element registered for that app. Spoofed app IDs or messages from unauthorized windows fail closed.
+  * **Reserved IDs**: Core OS application IDs (`settings`, `terminal`, `library`, `notes`, `about`, built-in games, and JS prototypes) are reserved and cannot be claimed by extensions.
+  * **Untrusted Code Constraints**: Extensions installed via `ArcadeOS.apps.install()` are forced to `type: 'sandboxed'` and cannot bypass iframe isolation or acquire `system` capability.
 * **Built-in Apps (`type: 'builtin'`)**:
   * Run in the same JavaScript execution context as the ArcadeOS shell.
   * Same-origin JavaScript execution cannot be cryptographically memory-isolated; permission declarations for built-in apps document expected feature usage.
+
+### Data Retention & Uninstallation Policy
+When an extension is uninstalled via `ArcadeOS.apps.uninstall(id)` or the App Library UI:
+1. Any open window belonging to the extension is automatically closed.
+2. All namespaced persistence keys (`arcadeos:app:<id>:*`) are permanently wiped from `localStorage`.
+3. Granted or revoked permission overrides are purged (`permissionManager.reset(id)`).
+4. The extension is deregistered from `ArcadeOS.registry`.
 
 ---
 

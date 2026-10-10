@@ -1,26 +1,72 @@
 const VALID_CATEGORIES = ['games', 'system', 'tools', 'developer', 'intelligence'];
 const VALID_PERMISSIONS = ['storage', 'audio', 'notifications', 'bus', 'system'];
+const ALLOWED_AUDIO_SOUNDS = ['launch', 'confirm', 'score', 'hit', 'gameover', 'blip', 'select'];
+const SAFE_KEY_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+const MAX_ENTRY_SIZE = 524288; // 512 KB
+const MAX_MANIFEST_SIZE = 1048576; // 1 MB
+const MAX_STORAGE_VALUE_SIZE = 65536; // 64 KB
+const MAX_CONCURRENT_REQUESTS = 30;
 
-export function validateManifest(manifest) {
+export const RESERVED_IDS = new Set([
+  'library', 'terminal', 'notes', 'settings', 'about',
+  'snake', 'breakout', 'pong', 'blockdrop', 'voidinvaders', 'vectordrift',
+  'developer', 'diagnostics', 'services', 'events', 'storage-inspector',
+  'achievements', 'music', 'stats', 'nimo', 'overdrive', 'system',
+  'constructor', 'prototype', '__proto__'
+]);
+
+export function validateManifest(manifest, options = {}) {
   const errors = [];
-  if (!manifest || typeof manifest !== 'object') {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
     return { valid: false, errors: ['Manifest must be an object'] };
   }
-  const id = String(manifest.id || '').trim();
-  if (!/^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$/.test(id) && id !== 'about') {
+
+  let serializedSize = 0;
+  try {
+    serializedSize = JSON.stringify(manifest).length;
+  } catch {
+    return { valid: false, errors: ['Manifest is not serializable'] };
+  }
+  if (serializedSize > MAX_MANIFEST_SIZE) {
+    errors.push(`Manifest exceeds size limit (${MAX_MANIFEST_SIZE} bytes)`);
+  }
+
+  const id = String(manifest.id || '').trim().toLowerCase();
+  if (!id) {
+    errors.push('Manifest requires an ID');
+  } else if (!/^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$/.test(id) && id !== 'about') {
     errors.push('Manifest ID must be 2-32 lowercase alphanumeric characters with hyphens');
   }
+
+  if (!options.allowReserved && RESERVED_IDS.has(id)) {
+    errors.push(`Manifest ID is reserved: ${id}`);
+  }
+
   if (!manifest.title && !manifest.name) {
     errors.push('Manifest requires a name or title');
   }
+
+  const name = String(manifest.name || manifest.title || '').trim();
+  if (name.length > 64) {
+    errors.push('Manifest name exceeds 64 characters');
+  }
+
+  if (manifest.description && String(manifest.description).length > 256) {
+    errors.push('Manifest description exceeds 256 characters');
+  }
+
   const version = String(manifest.version || '1.0.0').trim();
   if (!/^\d+\.\d+(\.\d+)?$/.test(version)) {
     errors.push('Manifest version must follow semver format (e.g. 1.0.0)');
   }
+
   if (manifest.category && !VALID_CATEGORIES.includes(manifest.category)) {
     errors.push(`Invalid category: ${manifest.category}. Must be one of ${VALID_CATEGORIES.join(', ')}`);
+  } else if (options.isExtension && !manifest.category) {
+    errors.push('Extension manifest requires a category');
   }
-  if (manifest.permissions) {
+
+  if (manifest.permissions !== undefined) {
     if (!Array.isArray(manifest.permissions)) {
       errors.push('Permissions must be an array of strings');
     } else {
@@ -29,11 +75,30 @@ export function validateManifest(manifest) {
           errors.push(`Unknown permission: ${perm}`);
         }
       }
+      if ((manifest.type === 'sandboxed' || options.isExtension) && manifest.permissions.includes('system')) {
+        errors.push('Sandboxed extensions cannot request system permission');
+      }
     }
   }
-  if (typeof manifest.render !== 'function' && typeof manifest.entry !== 'string') {
-    errors.push('Manifest must provide either a render function or entry HTML');
+
+  if (manifest.type === 'sandboxed' || options.isExtension) {
+    if (typeof manifest.entry !== 'string' || !manifest.entry.trim()) {
+      errors.push('Sandboxed extension requires an entry HTML string');
+    } else if (manifest.entry.length > MAX_ENTRY_SIZE) {
+      errors.push(`Extension entry HTML exceeds size limit (${MAX_ENTRY_SIZE} bytes)`);
+    }
+    if (typeof manifest.render === 'function') {
+      errors.push('Sandboxed extensions cannot provide a direct render function');
+    }
+  } else {
+    if (typeof manifest.render !== 'function' && typeof manifest.entry !== 'string') {
+      errors.push('Manifest must provide either a render function or entry HTML');
+    }
+    if (typeof manifest.entry === 'string' && manifest.entry.length > MAX_ENTRY_SIZE) {
+      errors.push(`Entry HTML exceeds size limit (${MAX_ENTRY_SIZE} bytes)`);
+    }
   }
+
   return { valid: errors.length === 0, errors, manifest };
 }
 
@@ -76,20 +141,101 @@ export function normalizeManifest(app) {
   };
 }
 
-export function createPermissionManager(storage, bus) {
+export function createPermissionManager(storage, bus, getManifest = null) {
   const storeKey = 'appPermissions';
-  const grants = new Map(Object.entries(storage?.get(storeKey, {}) || {}));
+
+  function loadGrants() {
+    let raw = null;
+    try {
+      raw = storage?.get(storeKey, {});
+    } catch {
+      raw = {};
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      raw = {};
+    }
+    const map = new Map();
+    for (const [appId, perms] of Object.entries(raw)) {
+      if (typeof appId === 'string' && perms && typeof perms === 'object' && !Array.isArray(perms)) {
+        const cleanPerms = {};
+        for (const [p, val] of Object.entries(perms)) {
+          if (VALID_PERMISSIONS.includes(p)) {
+            cleanPerms[p] = Boolean(val);
+          }
+        }
+        map.set(appId, cleanPerms);
+      }
+    }
+    return map;
+  }
+
+  const grants = loadGrants();
+
+  function resolveManifest(appId) {
+    if (typeof getManifest === 'function') {
+      try {
+        return getManifest(appId);
+      } catch {}
+    }
+    return null;
+  }
 
   function has(appId, permission) {
+    if (!VALID_PERMISSIONS.includes(permission)) return false;
+
+    const manifest = resolveManifest(appId);
+
+    // Sandboxed extensions cannot hold 'system' permission under any circumstances
+    if (permission === 'system' && manifest && (manifest.type === 'sandboxed' || manifest.trusted === false)) {
+      return false;
+    }
+
+    // If manifest specifies declared permissions, undeclared permissions are strictly denied
+    if (manifest && Array.isArray(manifest.permissions)) {
+      if (!manifest.permissions.includes(permission)) {
+        return false;
+      }
+    }
+
     const appGrants = grants.get(appId);
-    if (!appGrants) return true; // Default granted for declared permissions if unconfigured
-    return Boolean(appGrants[permission]);
+    if (!appGrants) {
+      if (manifest && Array.isArray(manifest.permissions)) {
+        return manifest.permissions.includes(permission);
+      }
+      // If no manifest resolver was provided, standard user permissions default to true for test compatibility
+      if (permission === 'system') return false;
+      return true;
+    }
+
+    if (permission in appGrants) {
+      return Boolean(appGrants[permission]);
+    }
+
+    // Fall back to declared permission default
+    if (manifest && Array.isArray(manifest.permissions)) {
+      return manifest.permissions.includes(permission);
+    }
+
+    return permission !== 'system';
   }
 
   function get(appId, declaredPermissions = []) {
+    const manifest = resolveManifest(appId);
+    const effectiveDeclared = Array.isArray(declaredPermissions) && declaredPermissions.length > 0
+      ? declaredPermissions
+      : (manifest && Array.isArray(manifest.permissions) ? manifest.permissions : []);
+
     const appGrants = grants.get(appId) || {};
     const result = {};
-    for (const perm of declaredPermissions) {
+    for (const perm of effectiveDeclared) {
+      if (!VALID_PERMISSIONS.includes(perm)) {
+        result[perm] = false;
+        continue;
+      }
+      if (perm === 'system' && manifest && (manifest.type === 'sandboxed' || manifest.trusted === false)) {
+        result[perm] = false;
+        continue;
+      }
       result[perm] = perm in appGrants ? Boolean(appGrants[perm]) : true;
     }
     return result;
@@ -97,11 +243,26 @@ export function createPermissionManager(storage, bus) {
 
   function set(appId, permission, granted) {
     if (!VALID_PERMISSIONS.includes(permission)) return false;
+
+    const manifest = resolveManifest(appId);
+
+    // Sandboxed extensions can never be granted 'system' capability
+    if (permission === 'system' && manifest && (manifest.type === 'sandboxed' || manifest.trusted === false)) {
+      return false;
+    }
+
+    // Undeclared permissions cannot be granted
+    if (manifest && Array.isArray(manifest.permissions) && !manifest.permissions.includes(permission)) {
+      return false;
+    }
+
     const current = grants.get(appId) || {};
     current[permission] = Boolean(granted);
     grants.set(appId, current);
     persist();
-    bus?.dispatchEvent(new CustomEvent('permission:changed', { detail: { appId, permission, granted: Boolean(granted) } }));
+    try {
+      bus?.dispatchEvent(new CustomEvent('permission:changed', { detail: { appId, permission, granted: Boolean(granted) } }));
+    } catch {}
     return true;
   }
 
@@ -113,7 +274,9 @@ export function createPermissionManager(storage, bus) {
   function persist() {
     const obj = {};
     for (const [k, v] of grants) obj[k] = v;
-    storage?.set(storeKey, obj);
+    try {
+      storage?.set(storeKey, obj);
+    } catch {}
   }
 
   return { has, get, set, reset };
@@ -298,8 +461,10 @@ export function installAppEcosystem(ArcadeOS) {
   if (!ArcadeOS || ArcadeOS.ecosystemInstalled) return;
 
   const { storage, registry, bus, openApp } = ArcadeOS;
-  const permissionManager = createPermissionManager(storage, bus);
-  const activeIframes = new Map();
+  const getAppManifest = id => {
+    return registry.get(id) || CATALOG_EXTENSIONS.find(e => e.id === id) || null;
+  };
+  const permissionManager = createPermissionManager(storage, bus, getAppManifest);
   let currentCategory = 'all';
   let searchQuery = '';
   let viewingAppDetail = null;
@@ -311,7 +476,7 @@ export function installAppEcosystem(ArcadeOS) {
   const originalRegisterApp = ArcadeOS.registerApp;
   ArcadeOS.registerApp = function enhancedRegisterApp(app) {
     const normalized = normalizeManifest(app);
-    const validated = validateManifest(normalized);
+    const validated = validateManifest(normalized, { allowReserved: true });
     if (!validated.valid) {
       console.warn(`[ArcadeOS Ecosystem] Manifest warning for ${app.id}:`, validated.errors);
     }
@@ -338,7 +503,7 @@ export function installAppEcosystem(ArcadeOS) {
   }
 
   function registerExtensionApp(manifest) {
-    const validated = validateManifest(manifest);
+    const validated = validateManifest(manifest, { allowReserved: true });
     if (!validated.valid) {
       console.error(`Cannot install extension ${manifest.id}:`, validated.errors);
       return false;
@@ -365,8 +530,13 @@ export function installAppEcosystem(ArcadeOS) {
         return new Promise((resolve, reject) => {
           const id = seq++;
           pending.set(id, { resolve, reject });
-          window.parent.postMessage({ type: 'arcade:sdk:request', appId: '${manifest.id}', id, action, payload }, '*');
-          setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error('Request timed out')); } }, 4000);
+          window.parent.postMessage({ type: 'arcade:sdk:request', appId: ${JSON.stringify(manifest.id)}, id, action, payload }, '*');
+          setTimeout(() => {
+            if (pending.has(id)) {
+              pending.delete(id);
+              reject(new Error('Request timed out'));
+            }
+          }, 4000);
         });
       }
       window.addEventListener('message', e => {
@@ -398,60 +568,140 @@ export function installAppEcosystem(ArcadeOS) {
     return `<div class="sandboxed-app-container"><iframe class="sandboxed-app-frame" sandbox="allow-scripts" srcdoc="${escapeAttr(srcdoc)}" data-sandboxed-app="${manifest.id}"></iframe></div>`;
   }
 
+  const inFlightRequests = new Map();
+
+  function getSenderFrame(sourceWindow) {
+    if (!sourceWindow) return null;
+    const iframes = document.querySelectorAll('.sandboxed-app-frame');
+    for (const iframe of iframes) {
+      try {
+        if (iframe.contentWindow === sourceWindow) {
+          return {
+            iframe,
+            appId: iframe.dataset.sandboxedApp
+          };
+        }
+      } catch {}
+    }
+    return null;
+  }
+
   // Host postMessage bridge listener
   window.addEventListener('message', async event => {
     const data = event.data;
-    if (!data || data.type !== 'arcade:sdk:request' || !data.appId || !data.id) return;
-    const { appId, id: reqId, action, payload } = data;
+    if (!data || typeof data !== 'object' || data.type !== 'arcade:sdk:request') return;
+
+    // 1. Verify that event.source matches an active registered sandboxed iframe
+    const sender = getSenderFrame(event.source);
+    if (!sender) {
+      // Reject messages from unexpected windows, external origins, popups, or detached iframes
+      return;
+    }
+
+    const { appId } = sender;
+    const reqId = data.id;
 
     function respond(result, error = null) {
       try {
-        event.source?.postMessage({ type: 'arcade:sdk:response', id: reqId, result, error }, '*');
+        event.source.postMessage({ type: 'arcade:sdk:response', id: reqId, result, error }, '*');
       } catch {}
     }
 
+    // 2. Validate request ID (must be a positive integer)
+    if (!Number.isInteger(reqId) || reqId <= 0 || reqId > 1e9) {
+      return respond(null, 'Invalid request ID');
+    }
+
+    // 3. Prevent App ID spoofing: message appId must match the verified iframe's appId
+    if (data.appId !== appId) {
+      return respond(null, `App ID spoofing detected: message declares "${data.appId}" but sender container is "${appId}"`);
+    }
+
+    // 4. Rate-limit concurrent in-flight requests per container
+    const currentInFlight = inFlightRequests.get(event.source) || 0;
+    if (currentInFlight >= MAX_CONCURRENT_REQUESTS) {
+      return respond(null, 'Too many concurrent requests');
+    }
+    inFlightRequests.set(event.source, currentInFlight + 1);
+
+    const finish = (result, error = null) => {
+      const active = inFlightRequests.get(event.source) || 1;
+      inFlightRequests.set(event.source, Math.max(0, active - 1));
+      respond(result, error);
+    };
+
+    const action = String(data.action || '');
+    const payload = data.payload;
+
+    // 5. Dispatch protected operations
     if (action === 'storage:get') {
       if (!permissionManager.has(appId, 'storage')) {
-        return respond(null, 'Storage permission denied');
+        return finish(null, 'Storage permission denied');
       }
-      const val = storage.get(`app:${appId}:${payload?.key}`, null);
-      return respond(val);
+      const key = payload?.key;
+      if (typeof key !== 'string' || !SAFE_KEY_REGEX.test(key)) {
+        return finish(null, 'Invalid storage key: must be 1-64 alphanumeric characters, underscores, or hyphens');
+      }
+      const val = storage.get(`app:${appId}:${key}`, null);
+      return finish(val, null);
     }
 
     if (action === 'storage:set') {
       if (!permissionManager.has(appId, 'storage')) {
-        return respond(null, 'Storage permission denied');
+        return finish(null, 'Storage permission denied');
       }
-      storage.set(`app:${appId}:${payload?.key}`, payload?.val);
-      return respond(true);
+      const key = payload?.key;
+      if (typeof key !== 'string' || !SAFE_KEY_REGEX.test(key)) {
+        return finish(null, 'Invalid storage key: must be 1-64 alphanumeric characters, underscores, or hyphens');
+      }
+      let serialized = '';
+      try {
+        serialized = JSON.stringify(payload?.val);
+      } catch {
+        return finish(null, 'Storage value is not serializable');
+      }
+      if (serialized.length > MAX_STORAGE_VALUE_SIZE) {
+        return finish(null, `Storage value exceeds size limit (${MAX_STORAGE_VALUE_SIZE} bytes)`);
+      }
+      storage.set(`app:${appId}:${key}`, payload?.val);
+      return finish(true, null);
     }
 
     if (action === 'audio:play') {
       if (!permissionManager.has(appId, 'audio')) {
-        return respond(null, 'Audio permission denied');
+        return finish(null, 'Audio permission denied');
       }
-      ArcadeOS.audio?.play(payload?.sound || 'confirm');
-      return respond(true);
+      const sound = String(payload?.sound || 'confirm');
+      if (!ALLOWED_AUDIO_SOUNDS.includes(sound)) {
+        return finish(null, `Invalid sound name: ${sound}`);
+      }
+      try {
+        ArcadeOS.audio?.play(sound);
+      } catch {}
+      return finish(true, null);
     }
 
     if (action === 'notify') {
       if (!permissionManager.has(appId, 'notifications')) {
-        return respond(null, 'Notification permission denied');
+        return finish(null, 'Notification permission denied');
       }
-      const text = String(payload?.message || '').slice(0, 80);
+      if (typeof payload?.message !== 'string') {
+        return finish(null, 'Notification message must be a string');
+      }
+      const text = payload.message.slice(0, 120).trim();
+      if (!text) {
+        return finish(null, 'Notification message cannot be empty');
+      }
       showToast(text);
-      return respond(true);
+      return finish(true, null);
     }
 
-    return respond(null, `Unsupported action: ${action}`);
+    return finish(null, `Unsupported action: ${action}`);
   });
 
   // Track window closes to clean up iframe resources
   bus.addEventListener('app:closed', event => {
-    const id = event.detail?.id;
-    if (activeIframes.has(id)) {
-      activeIframes.delete(id);
-    }
+    // In-flight counts will be cleaned when iframes are removed from DOM
   });
 
   registerInstalledExtensions();
@@ -502,10 +752,12 @@ export function installAppEcosystem(ArcadeOS) {
       const id = installBtn.dataset.libInstall;
       const ext = CATALOG_EXTENSIONS.find(e => e.id === id);
       if (ext) {
-        installedExtensionIds.add(id);
-        storage.set('installedExtensions', [...installedExtensionIds]);
-        registerExtensionApp(ext);
-        showToast(`INSTALLED: ${ext.name}`);
+        const res = api.install(ext);
+        if (res.success) {
+          showToast(`INSTALLED: ${ext.name}`);
+        } else {
+          showToast(`INSTALL FAILED: ${res.errors?.[0] || 'Unknown error'}`);
+        }
         refreshLibrary();
       }
       return;
@@ -514,10 +766,7 @@ export function installAppEcosystem(ArcadeOS) {
     const uninstallBtn = event.target.closest('[data-lib-uninstall]');
     if (uninstallBtn) {
       const id = uninstallBtn.dataset.libUninstall;
-      installedExtensionIds.delete(id);
-      storage.set('installedExtensions', [...installedExtensionIds]);
-      registry.delete(id);
-      permissionManager.reset(id);
+      api.uninstall(id);
       showToast(`UNINSTALLED: ${id.toUpperCase()}`);
       viewingAppDetail = null;
       refreshLibrary();
@@ -769,20 +1018,67 @@ export function installAppEcosystem(ArcadeOS) {
     },
     get: id => registry.get(id) || CATALOG_EXTENSIONS.find(e => e.id === id) || null,
     install: manifest => {
-      const validated = validateManifest(manifest);
+      const validated = validateManifest(manifest, { isExtension: true });
       if (!validated.valid) return { success: false, errors: validated.errors };
+
+      if (RESERVED_IDS.has(manifest.id)) {
+        return { success: false, errors: [`Manifest ID is reserved: ${manifest.id}`] };
+      }
+
+      if (registry.has(manifest.id) && !installedExtensionIds.has(manifest.id)) {
+        return { success: false, errors: [`Application ID collision: ${manifest.id} is already registered`] };
+      }
+
+      const securedManifest = {
+        ...manifest,
+        type: 'sandboxed',
+        trusted: false,
+        permissions: Array.isArray(manifest.permissions)
+          ? manifest.permissions.filter(p => p !== 'system')
+          : []
+      };
+
       installedExtensionIds.add(manifest.id);
-      storage.set('installedExtensions', [...installedExtensionIds]);
-      registerExtensionApp(manifest);
+      try {
+        storage.set('installedExtensions', [...installedExtensionIds]);
+      } catch {}
+      registerExtensionApp(securedManifest);
       return { success: true };
     },
     uninstall: id => {
       const app = registry.get(id);
       if (!app || app.type !== 'sandboxed') return false;
-      installedExtensionIds.delete(id);
-      storage.set('installedExtensions', [...installedExtensionIds]);
-      registry.delete(id);
+
+      // 1. Close running window if open
+      const win = document.querySelector(`.os-window[data-app="${id}"]`);
+      if (win) {
+        const closeBtn = win.querySelector('[data-close]');
+        if (closeBtn) closeBtn.click();
+        else win.remove();
+      }
+
+      // 2. Wipe namespaced storage keys
+      try {
+        const prefix = `arcadeos:app:${id}:`;
+        const toRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith(prefix)) {
+            toRemove.push(k);
+          }
+        }
+        toRemove.forEach(k => localStorage.removeItem(k));
+      } catch {}
+
+      // 3. Reset permissions
       permissionManager.reset(id);
+
+      // 4. Remove from installed set and registry
+      installedExtensionIds.delete(id);
+      try {
+        storage.set('installedExtensions', [...installedExtensionIds]);
+      } catch {}
+      registry.delete(id);
       return true;
     }
   };
