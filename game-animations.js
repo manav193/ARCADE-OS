@@ -52,8 +52,8 @@ export function installGameAnimations(ArcadeOS) {
     pulse,
     finish,
     reset,
-    pause: id => setPaused(id, true),
-    resume: id => setPaused(id, false),
+    pause: id => setPaused(id, true, true),
+    resume: id => setPaused(id, false, true),
     sync: syncAllSessions,
     getSession: id => sessions.get(id) || null,
     themes: GAME_THEMES
@@ -163,6 +163,7 @@ export function installGameAnimations(ArcadeOS) {
   function reset(id) {
     const session = sessions.get(id);
     if (!session) return;
+    session.manualPaused = false;
     session.startedAt = performance.now();
     session.elapsedBeforePause = 0;
     session.finished = false;
@@ -173,9 +174,11 @@ export function installGameAnimations(ArcadeOS) {
     pulse(id, 'launch');
   }
 
-  function setPaused(id, paused) {
+  function setPaused(id, paused, manual = false) {
     const session = sessions.get(id);
-    if (!session || session.paused === paused) return;
+    if (!session) return;
+    if (manual) session.manualPaused = paused;
+    if (session.paused === paused) return;
     if (paused) {
       if (!session.finished) session.elapsedBeforePause += Math.max(0, performance.now() - session.startedAt);
       session.paused = true;
@@ -194,7 +197,7 @@ export function installGameAnimations(ArcadeOS) {
   }
 
   function syncSession(session) {
-    const shouldPause = document.hidden || !session.win.isConnected || session.win.classList.contains('is-min');
+    const shouldPause = Boolean(session.manualPaused) || document.hidden || !session.win.isConnected || session.win.classList.contains('is-min');
     setPaused(session.id, shouldPause);
   }
 
