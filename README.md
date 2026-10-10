@@ -27,6 +27,14 @@ The standalone migration now includes:
 - Block Drop
 - Void Invaders
 - Vector Drift
+- Shared game session controls, pause/resume overlay and Escape shortcuts
+- Mobile touch D-pad and action button HUD
+- Global Web Audio HUD with volume mixer and master mute
+- NIMO intelligence and hidden Overdrive developer core
+- Grouped command rail navigation with keyboard shortcuts
+- Custom per-game reactive animations and particle motion
+- Persistent workspace sessions with automatic state restoration
+- Focused game input ownership and background loop suspension guards
 - Responsive static deployment
 - Zero-framework HTML, CSS and JavaScript architecture
 
@@ -75,10 +83,26 @@ system-apps.js         Settings, Developer Mode, diagnostics and customizer
 system-apps.css        System and developer application styles
 arcade-expansion.js    Extra games, stats, audio and service-access layer
 arcade-expansion.css   Expansion application and game styles
+arcade-music.js        Procedural Web Audio music engine
+arcade-music.css       Music mixer application styles
+game-controls.js       Shared game pause/resume, touch d-pad & audio HUD
+game-controls.css      Game control overlay and mobile D-pad styles
+nimo-overdrive.js      NIMO intelligence and Overdrive cheat modifiers
+nimo-overdrive.css     NIMO assistant and Overdrive core styles
+navigation-shell.js    Grouped command rail and quick launcher
+navigation-shell.css   Command rail navigation styles
+game-animations.js     Per-game particle and motion engine
+game-animations.css    Dynamic game visual themes and effects
+workspace-session.js   Persistent window geometry and session restore
+workspace-session.css  Workspace controls and mobile adaptations
+input-ownership-guard.js  Focused window keyboard input ownership guard
+game-loop-guard.js     Animation frame and timeout suspension guard
+cheat-score-guard.js   Fair-play score isolation guard
+window-state-sync.js   Centralized window state synchronization
 vercel.json            Static deployment configuration
 ```
 
-The public runtime exposes `window.ArcadeOS` with `openApp`, `registerApp`, `registry`, `bus`, `storage`, `system`, `audio` and `services`. New applications can be registered without rewriting the desktop shell.
+The public runtime exposes `window.ArcadeOS` with `openApp`, `registerApp`, `registry`, `bus`, `storage`, `system`, `audio`, `music`, `controls`, `navigation`, `animations`, `workspaceSession`, `inputGuard`, `loopGuard` and `services`. New applications can be registered without rewriting the desktop shell.
 
 ## Migration status
 

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const requiredFiles = [
   'index.html','app.js','styles.css','system-apps.js','arcade-expansion.js','arcade-music.js',
-  'game-controls.js','nimo-overdrive.js','cheat-score-guard.js','navigation-shell.js','game-animations.js',
+  'game-controls.js','game-controls.css','nimo-overdrive.js','nimo-overdrive.css','cheat-score-guard.js','navigation-shell.js','game-animations.js',
   'window-state-sync.js','input-ownership-guard.js','game-loop-guard.js','navigation-shell.css','game-animations.css'
 ];
 
@@ -22,16 +22,18 @@ if (!failures.length) {
   const navigation = read('navigation-shell.js');
   const animations = read('game-animations.js');
   const animationStyles = read('game-animations.css');
+  const controls = read('game-controls.js');
+  const controlStyles = read('game-controls.css');
   const windowState = read('window-state-sync.js');
   const inputGuard = read('input-ownership-guard.js');
   const loopGuard = read('game-loop-guard.js');
   const overdrive = read('nimo-overdrive.js');
   const scoreGuard = read('cheat-score-guard.js');
 
-  for (const asset of ['navigation-shell.css','game-animations.css','navigation-shell.js','game-animations.js','window-state-sync.js','input-ownership-guard.js','game-loop-guard.js']) {
+  for (const asset of ['navigation-shell.css','game-animations.css','game-controls.css','nimo-overdrive.css','navigation-shell.js','game-animations.js','game-controls.js','window-state-sync.js','input-ownership-guard.js','game-loop-guard.js']) {
     expect(html.includes(asset), `index.html does not load ${asset}`);
   }
-  for (const installer of ['installSystemApps','installArcadeExpansion','installArcadeMusic','installNavigationShell','installGameAnimations','installWindowStateSync']) {
+  for (const installer of ['installSystemApps','installArcadeExpansion','installArcadeMusic','installGameControls','installNavigationShell','installGameAnimations','installWindowStateSync']) {
     expect(html.includes(`${installer}(window.ArcadeOS)`), `Missing installer call: ${installer}`);
   }
   expect(html.indexOf('input-ownership-guard.js') < html.indexOf('app.js'), 'Input ownership guard must load before app.js');
@@ -41,6 +43,7 @@ if (!failures.length) {
     expect(animations.includes(`${id}:`), `Animation theme is missing game: ${id}`);
     expect(overdrive.includes(`${id}:`), `Overdrive modifiers are missing game: ${id}`);
     expect(loopGuard.includes(`'${id}'`), `Loop guard is missing game: ${id}`);
+    expect(controls.includes(`'${id}'`), `Game controls is missing game: ${id}`);
   }
   expect(app.includes('window.ArcadeOS='), 'Base runtime does not expose window.ArcadeOS');
   expect(music.includes('installNimoOverdrive(ArcadeOS)'), 'Music bootstrap does not install NIMO Overdrive');
@@ -52,6 +55,13 @@ if (!failures.length) {
   expect(animations.includes("document.addEventListener('visibilitychange', syncAllSessions)"), 'Animations do not suspend when the page is hidden');
   expect(animations.includes("session.win.classList.contains('is-min')"), 'Animations do not suspend minimized sessions');
   expect(animationStyles.includes('animation-play-state:paused'), 'Paused sessions do not suspend CSS animation work');
+  expect(controls.includes('ArcadeOS.controls=api') || controls.includes('ArcadeOS.controls = api'), 'Game controls service is not exposed');
+  expect(controls.includes('data-touch-key'), 'Touch key controls are not configured');
+  expect(controls.includes('data-audio-hud'), 'Audio HUD is not configured');
+  expect(controls.includes('Escape'), 'Escape key pause shortcut is missing');
+  expect(controlStyles.includes('.game-control-layer'), 'Game control layer styles are missing');
+  expect(controlStyles.includes('.touch-dpad'), 'Touch dpad styles are missing');
+  expect(controlStyles.includes('.audio-hud'), 'Audio HUD styles are missing');
   expect(windowState.includes('ArcadeOS.windowState = api'), 'Window state service is not exposed');
   expect(windowState.includes("new CustomEvent('window:state'"), 'Window state changes are not broadcast');
   expect(windowState.includes("toggleAttribute('inert'"), 'Minimized windows are not removed from keyboard interaction');

@@ -26,16 +26,25 @@ export function installGameControls(ArcadeOS){
     const id=event.detail?.id;if(GAME_IDS.includes(id)){const session=sessions.get(id);if(session)session.state='ended';updateOverlay(id,'ended');}
   });
 
+  let lastTouchEmitTime=0;
+
   document.addEventListener('click',event=>{
     const start=event.target.closest('[data-game-start]');if(start)startGame(start.dataset.gameStart);
     const pause=event.target.closest('[data-game-pause]');if(pause)pauseGame(pause.dataset.gamePause);
     const resume=event.target.closest('[data-game-resume]');if(resume)resumeGame(resume.dataset.gameResume);
     const restart=event.target.closest('[data-game-control-restart]');if(restart)restartGame(restart.dataset.gameControlRestart);
-    const key=event.target.closest('[data-touch-key]');if(key)emitKey(key.dataset.touchKey);
+    const key=event.target.closest('[data-touch-key]');if(key&&performance.now()-lastTouchEmitTime>250)emitKey(key.dataset.touchKey);
     if(event.target.closest('[data-audio-hud-toggle]'))document.querySelector('[data-audio-hud]')?.classList.toggle('is-open');
     if(event.target.closest('[data-audio-master-toggle]'))toggleMasterAudio();
   });
-  document.addEventListener('pointerdown',event=>{const key=event.target.closest('[data-touch-key]');if(key){event.preventDefault();emitKey(key.dataset.touchKey)}});
+  document.addEventListener('pointerdown',event=>{
+    const key=event.target.closest('[data-touch-key]');
+    if(key){
+      event.preventDefault();
+      lastTouchEmitTime=performance.now();
+      emitKey(key.dataset.touchKey);
+    }
+  });
   document.addEventListener('input',event=>{
     if(!event.target.matches('[data-global-volume]'))return;
     const value=Number(event.target.value)/100;
@@ -62,19 +71,19 @@ export function installGameControls(ArcadeOS){
   }
   function startGame(id){
     const session=sessions.get(id);if(!session)return;
-    session.state='running';hideOverlay(session.win);triggerRestart(session.win,id);ArcadeOS.music?.play(id);updateHud();
+    session.state='running';hideOverlay(session.win);triggerRestart(session.win,id);ArcadeOS.music?.play(id);ArcadeOS.animations?.resume?.(id);updateHud();
   }
   function pauseGame(id){
     const session=sessions.get(id);if(!session||session.state!=='running')return;
-    session.win._cleanup?.();session.state='paused';ArcadeOS.music?.stop(id,true);updateOverlay(id,'paused');updateHud();
+    session.win._cleanup?.();session.state='paused';ArcadeOS.music?.stop(id,true);ArcadeOS.animations?.pause?.(id);updateOverlay(id,'paused');updateHud();
   }
   function resumeGame(id){
     const session=sessions.get(id);if(!session)return;
-    session.state='running';hideOverlay(session.win);triggerRestart(session.win,id);ArcadeOS.music?.play(id);updateHud();
+    session.state='running';hideOverlay(session.win);triggerRestart(session.win,id);ArcadeOS.music?.play(id);ArcadeOS.animations?.resume?.(id);updateHud();
   }
   function restartGame(id){
     const session=sessions.get(id);if(!session)return;
-    session.win._cleanup?.();session.state='running';hideOverlay(session.win);triggerRestart(session.win,id);ArcadeOS.music?.play(id);updateHud();
+    session.win._cleanup?.();session.state='running';hideOverlay(session.win);triggerRestart(session.win,id);ArcadeOS.music?.play(id);ArcadeOS.animations?.reset?.(id);updateHud();
   }
 }
 
