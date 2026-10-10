@@ -18,12 +18,14 @@
   <link rel="stylesheet" href="game-animations.css">
   <link rel="stylesheet" href="workspace-session.css">
   <link rel="stylesheet" href="game-controls.css" data-game-controls-css>
+  <link rel="stylesheet" href="app-ecosystem.css">
   <script src="input-ownership-guard.js"></script>
   <script src="game-loop-guard.js"></script>
   <script type="module" src="app.js" defer></script>
   <script type="module">
     import { installSystemApps } from './system-apps.js';
     import { installArcadeExpansion } from './arcade-expansion.js';
+    import { installAppEcosystem } from './app-ecosystem.js';
     import { installArcadeMusic } from './arcade-music.js';
     import { installGameControls } from './game-controls.js';
     import { installNavigationShell } from './navigation-shell.js';
@@ -35,6 +37,7 @@
       if (!window.ArcadeOS) return requestAnimationFrame(install);
       installSystemApps(window.ArcadeOS);
       installArcadeExpansion(window.ArcadeOS);
+      installAppEcosystem(window.ArcadeOS);
       installArcadeMusic(window.ArcadeOS);
       installGameControls(window.ArcadeOS);
       installNavigationShell(window.ArcadeOS);

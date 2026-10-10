@@ -7,7 +7,8 @@
     "check:syntax": "node scripts/check-syntax.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
     "check:workspace": "node scripts/check-workspace-session.mjs",
-    "test": "npm run check:syntax && npm run check:contracts && npm run check:workspace"
+    "check:ecosystem": "node scripts/check-ecosystem.mjs",
+    "test": "npm run check:syntax && npm run check:contracts && npm run check:workspace && npm run check:ecosystem"
   },
   "engines": {
     "node": ">=20"

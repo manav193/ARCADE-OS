@@ -35,6 +35,10 @@ The standalone migration now includes:
 - Custom per-game reactive animations and particle motion
 - Persistent workspace sessions with automatic state restoration
 - Focused game input ownership and background loop suspension guards
+- Extensible Application Manifest v1.0 specification and validation
+- Scoped capability and permission management with runtime gating and user revocation
+- Sandboxed iframe extension runner (`sandbox="allow-scripts"`) with postMessage RPC bridge
+- Modernized App Library with category tabs, search, permission inspector, and catalog
 - Responsive static deployment
 - Zero-framework HTML, CSS and JavaScript architecture
 
@@ -56,6 +60,7 @@ apps
 about
 date
 theme
+open library
 open snake
 open breakout
 open pong
@@ -99,10 +104,13 @@ input-ownership-guard.js  Focused window keyboard input ownership guard
 game-loop-guard.js     Animation frame and timeout suspension guard
 cheat-score-guard.js   Fair-play score isolation guard
 window-state-sync.js   Centralized window state synchronization
+app-ecosystem.js       Manifest schema, permissions, sandboxed container & App Library
+app-ecosystem.css      App Library UI, inspector, and category styles
+docs/APP-SDK.md        ArcadeOS App Manifest and Extension SDK documentation
 vercel.json            Static deployment configuration
 ```
 
-The public runtime exposes `window.ArcadeOS` with `openApp`, `registerApp`, `registry`, `bus`, `storage`, `system`, `audio`, `music`, `controls`, `navigation`, `animations`, `workspaceSession`, `inputGuard`, `loopGuard` and `services`. New applications can be registered without rewriting the desktop shell.
+The public runtime exposes `window.ArcadeOS` with `openApp`, `registerApp`, `registry`, `bus`, `storage`, `system`, `audio`, `music`, `controls`, `navigation`, `animations`, `workspaceSession`, `inputGuard`, `loopGuard`, `services`, and `ecosystem`. New applications can be registered without rewriting the desktop shell.
 
 ## Migration status
 
