@@ -1,11 +1,13 @@
+export const SYSTEM_VERSION = '2.4.0';
 const VALID_CATEGORIES = ['games', 'system', 'tools', 'developer', 'intelligence'];
 const VALID_PERMISSIONS = ['storage', 'audio', 'notifications', 'bus', 'system'];
 const ALLOWED_AUDIO_SOUNDS = ['launch', 'confirm', 'score', 'hit', 'gameover', 'blip', 'select'];
 const SAFE_KEY_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
-const MAX_ENTRY_SIZE = 524288; // 512 KB
-const MAX_MANIFEST_SIZE = 1048576; // 1 MB
-const MAX_STORAGE_VALUE_SIZE = 65536; // 64 KB
-const MAX_CONCURRENT_REQUESTS = 30;
+export const MAX_ENTRY_SIZE = 524288; // 512 KB
+export const MAX_MANIFEST_SIZE = 1048576; // 1 MB
+export const MAX_STORAGE_VALUE_SIZE = 65536; // 64 KB
+export const MAX_APP_STORAGE_QUOTA = 262144; // 256 KB aggregate per app
+export const MAX_CONCURRENT_REQUESTS = 30;
 
 export const RESERVED_IDS = new Set([
   'library', 'terminal', 'notes', 'settings', 'about',
@@ -14,6 +16,59 @@ export const RESERVED_IDS = new Set([
   'achievements', 'music', 'stats', 'nimo', 'overdrive', 'system',
   'constructor', 'prototype', '__proto__'
 ]);
+
+export function compareSemver(v1, v2) {
+  const p1 = String(v1 || '0.0.0').split('.').map(n => parseInt(n, 10) || 0);
+  const p2 = String(v2 || '0.0.0').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    const a = p1[i] || 0;
+    const b = p2[i] || 0;
+    if (a > b) return 1;
+    if (a < b) return -1;
+  }
+  return 0;
+}
+
+export function getByteLength(str) {
+  if (typeof str !== 'string') return 0;
+  try {
+    return new TextEncoder().encode(str).length;
+  } catch {
+    return str.length;
+  }
+}
+
+export function calculateAppStorageUsage(appId, storage = null) {
+  let totalBytes = 0;
+  const prefix = `app:${appId}:`;
+  const lsPrefix = `arcadeos:${prefix}`;
+
+  if (storage?.data instanceof Map) {
+    for (const [k, v] of storage.data) {
+      if (typeof k === 'string' && (k.startsWith(prefix) || k.startsWith(lsPrefix))) {
+        try {
+          const serialized = typeof v === 'string' ? v : JSON.stringify(v);
+          totalBytes += getByteLength(k) + getByteLength(serialized);
+        } catch {}
+      }
+    }
+    return totalBytes;
+  }
+
+  if (typeof localStorage !== 'undefined' && localStorage) {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(lsPrefix)) {
+          const val = localStorage.getItem(k);
+          totalBytes += getByteLength(k) + (val ? getByteLength(val) : 0);
+        }
+      }
+    } catch {}
+  }
+
+  return totalBytes;
+}
 
 export function validateManifest(manifest, options = {}) {
   const errors = [];
@@ -58,6 +113,15 @@ export function validateManifest(manifest, options = {}) {
   const version = String(manifest.version || '1.0.0').trim();
   if (!/^\d+\.\d+(\.\d+)?$/.test(version)) {
     errors.push('Manifest version must follow semver format (e.g. 1.0.0)');
+  }
+
+  if (manifest.minSystemVersion) {
+    const minSys = String(manifest.minSystemVersion).trim();
+    if (!/^\d+\.\d+(\.\d+)?$/.test(minSys)) {
+      errors.push('minSystemVersion must follow semver format (e.g. 2.4.0)');
+    } else if (compareSemver(minSys, SYSTEM_VERSION) > 0) {
+      errors.push(`Manifest requires ArcadeOS v${minSys} or higher (current system is v${SYSTEM_VERSION})`);
+    }
   }
 
   if (manifest.category && !VALID_CATEGORIES.includes(manifest.category)) {
@@ -550,7 +614,10 @@ export function installAppEcosystem(ArcadeOS) {
       window.Arcade = {
         storage: {
           get: key => request('storage:get', { key }),
-          set: (key, val) => request('storage:set', { key, val })
+          set: (key, val) => request('storage:set', { key, val }),
+          delete: key => request('storage:delete', { key }),
+          remove: key => request('storage:delete', { key }),
+          quota: () => request('storage:quota', {})
         },
         audio: {
           play: sound => request('audio:play', { sound })
@@ -617,16 +684,22 @@ export function installAppEcosystem(ArcadeOS) {
       return respond(null, `App ID spoofing detected: message declares "${data.appId}" but sender container is "${appId}"`);
     }
 
-    // 4. Rate-limit concurrent in-flight requests per container
-    const currentInFlight = inFlightRequests.get(event.source) || 0;
-    if (currentInFlight >= MAX_CONCURRENT_REQUESTS) {
+    // 4. Rate-limit concurrent in-flight requests and reject duplicate in-flight IDs
+    let inFlightSet = inFlightRequests.get(event.source);
+    if (!inFlightSet) {
+      inFlightSet = new Set();
+      inFlightRequests.set(event.source, inFlightSet);
+    }
+    if (inFlightSet.has(reqId)) {
+      return respond(null, `Duplicate request ID in flight: ${reqId}`);
+    }
+    if (inFlightSet.size >= MAX_CONCURRENT_REQUESTS) {
       return respond(null, 'Too many concurrent requests');
     }
-    inFlightRequests.set(event.source, currentInFlight + 1);
+    inFlightSet.add(reqId);
 
     const finish = (result, error = null) => {
-      const active = inFlightRequests.get(event.source) || 1;
-      inFlightRequests.set(event.source, Math.max(0, active - 1));
+      inFlightSet.delete(reqId);
       respond(result, error);
     };
 
@@ -660,11 +733,66 @@ export function installAppEcosystem(ArcadeOS) {
       } catch {
         return finish(null, 'Storage value is not serializable');
       }
-      if (serialized.length > MAX_STORAGE_VALUE_SIZE) {
+      const valBytes = getByteLength(serialized);
+      if (valBytes > MAX_STORAGE_VALUE_SIZE) {
         return finish(null, `Storage value exceeds size limit (${MAX_STORAGE_VALUE_SIZE} bytes)`);
       }
+
+      // Aggregate quota enforcement
+      const currentUsage = calculateAppStorageUsage(appId, storage);
+      const existingVal = storage.get(`app:${appId}:${key}`, undefined);
+      let existingBytes = 0;
+      if (existingVal !== undefined) {
+        try {
+          existingBytes = getByteLength(JSON.stringify(existingVal));
+        } catch {}
+      } else {
+        existingBytes = -getByteLength(`arcadeos:app:${appId}:${key}`);
+      }
+      const delta = valBytes - existingBytes;
+      if (currentUsage + delta > MAX_APP_STORAGE_QUOTA) {
+        return finish(null, `Aggregate storage quota exceeded (${MAX_APP_STORAGE_QUOTA} bytes limit for extension)`);
+      }
+
       storage.set(`app:${appId}:${key}`, payload?.val);
       return finish(true, null);
+    }
+
+    if (action === 'storage:delete' || action === 'storage:remove') {
+      if (!permissionManager.has(appId, 'storage')) {
+        return finish(null, 'Storage permission denied');
+      }
+      const key = payload?.key;
+      if (typeof key !== 'string' || !SAFE_KEY_REGEX.test(key)) {
+        return finish(null, 'Invalid storage key: must be 1-64 alphanumeric characters, underscores, or hyphens');
+      }
+      const fullKey = `app:${appId}:${key}`;
+      const lsKey = `arcadeos:${fullKey}`;
+      try {
+        if (typeof localStorage !== 'undefined' && localStorage) {
+          localStorage.removeItem(lsKey);
+        }
+      } catch {}
+      if (storage?.data instanceof Map) {
+        storage.data.delete(fullKey);
+        storage.data.delete(lsKey);
+      }
+      if (typeof storage?.remove === 'function') {
+        storage.remove(fullKey);
+      }
+      return finish(true, null);
+    }
+
+    if (action === 'storage:quota') {
+      if (!permissionManager.has(appId, 'storage')) {
+        return finish(null, 'Storage permission denied');
+      }
+      const currentUsage = calculateAppStorageUsage(appId, storage);
+      return finish({
+        usage: currentUsage,
+        quota: MAX_APP_STORAGE_QUOTA,
+        available: Math.max(0, MAX_APP_STORAGE_QUOTA - currentUsage)
+      }, null);
     }
 
     if (action === 'audio:play') {
@@ -964,6 +1092,11 @@ export function installAppEcosystem(ArcadeOS) {
             <button class="ecosystem-btn-install" style="padding:12px;" data-lib-install="${app.id}">INSTALL EXTENSION</button>
           `}
         </div>
+        ${app.type === 'sandboxed' && isInstalled ? `
+          <div class="destructive-uninstall-warning" style="margin-top:10px;padding:8px 12px;border:1px solid rgba(251,113,133,.3);border-radius:6px;background:rgba(251,113,133,.06);color:#fda4af;font:600 .7rem JetBrains Mono;">
+            ⚠️ Notice: Uninstallation permanently deletes this extension and completely wipes all of its local data.
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -1080,7 +1213,60 @@ export function installAppEcosystem(ArcadeOS) {
       } catch {}
       registry.delete(id);
       return true;
-    }
+    },
+    update: newManifest => {
+      if (!newManifest || typeof newManifest !== 'object') {
+        return { success: false, errors: ['Manifest must be an object'] };
+      }
+      const id = newManifest.id;
+      if (!id || !registry.has(id)) {
+        return { success: false, errors: [`Cannot update application "${id}": not installed`] };
+      }
+      const existingApp = registry.get(id);
+      if (existingApp.type !== 'sandboxed') {
+        return { success: false, errors: [`Cannot update built-in system application "${id}"`] };
+      }
+
+      // 1. Validate the new manifest
+      const validated = validateManifest(newManifest, { isExtension: true });
+      if (!validated.valid) {
+        return { success: false, errors: validated.errors };
+      }
+
+      // 2. Prevent downgrade
+      if (compareSemver(newManifest.version, existingApp.version) < 0) {
+        return { success: false, errors: [`Cannot downgrade extension from v${existingApp.version} to v${newManifest.version}`] };
+      }
+
+      // 3. Atomically update with rollback preservation
+      const previousApp = { ...existingApp };
+      try {
+        // Close existing window if running
+        const win = document.querySelector(`.os-window[data-app="${id}"]`);
+        if (win) {
+          const closeBtn = win.querySelector('[data-close]');
+          if (closeBtn) closeBtn.click();
+          else win.remove();
+        }
+
+        const securedManifest = {
+          ...newManifest,
+          type: 'sandboxed',
+          trusted: false,
+          permissions: Array.isArray(newManifest.permissions)
+            ? newManifest.permissions.filter(p => p !== 'system')
+            : []
+        };
+
+        registerExtensionApp(securedManifest);
+        return { success: true, version: newManifest.version };
+      } catch (err) {
+        registerExtensionApp(previousApp);
+        return { success: false, errors: [`Update failed and rolled back: ${err.message}`] };
+      }
+    },
+    calculateStorageUsage: appId => calculateAppStorageUsage(appId, storage),
+    storageQuota: MAX_APP_STORAGE_QUOTA
   };
 
   ArcadeOS.apps = api;

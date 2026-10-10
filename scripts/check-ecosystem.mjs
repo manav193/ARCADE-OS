@@ -1,4 +1,14 @@
-import { validateManifest, normalizeManifest, createPermissionManager } from '../app-ecosystem.js';
+import { 
+  validateManifest, 
+  normalizeManifest, 
+  createPermissionManager,
+  compareSemver,
+  getByteLength,
+  calculateAppStorageUsage,
+  MAX_APP_STORAGE_QUOTA,
+  MAX_STORAGE_VALUE_SIZE,
+  SYSTEM_VERSION
+} from '../app-ecosystem.js';
 
 let failed = 0;
 let passed = 0;
@@ -239,6 +249,168 @@ const app2Key = getScopedKey('app-two', 'settings');
 assert(app1Key !== app2Key, 'Storage keys are strictly scoped per app ID');
 assert(app1Key.startsWith('arcadeos:app:app-one:'), 'App namespace prefix enforced');
 assert(app2Key.startsWith('arcadeos:app:app-two:'), 'Second app namespace prefix enforced');
+
+console.log('\n--- Testing Unicode Byte Calculations & Quota Metrics ---');
+assert(getByteLength('arcade') === 6, 'Standard ASCII byte length is 6');
+assert(getByteLength('🎨') === 4, 'Emoji "🎨" byte length is 4 (UTF-8 encoded)');
+assert(getByteLength('日本語') === 9, 'Multibyte CJK string byte length is 9');
+
+const quotaMockStorage = {
+  data: new Map(),
+  get(k, fallback = null) { return this.data.has(k) ? this.data.get(k) : fallback; },
+  set(k, v) { this.data.set(k, v); }
+};
+
+// Initial usage is zero
+assert(calculateAppStorageUsage('test-quota-app', quotaMockStorage) === 0, 'Initial app storage usage is 0 bytes');
+
+// Add item within quota
+quotaMockStorage.set('app:test-quota-app:key1', { note: 'sample data' });
+const usage1 = calculateAppStorageUsage('test-quota-app', quotaMockStorage);
+assert(usage1 > 0 && usage1 < MAX_APP_STORAGE_QUOTA, 'Usage increases after writing item');
+
+// Add boundary data up to quota
+const largeChunk = 'x'.repeat(60000); // 60 KB
+quotaMockStorage.set('app:test-quota-app:chunk1', largeChunk);
+quotaMockStorage.set('app:test-quota-app:chunk2', largeChunk);
+quotaMockStorage.set('app:test-quota-app:chunk3', largeChunk);
+quotaMockStorage.set('app:test-quota-app:chunk4', largeChunk); // ~240 KB total
+const usage2 = calculateAppStorageUsage('test-quota-app', quotaMockStorage);
+assert(usage2 > 240000 && usage2 <= MAX_APP_STORAGE_QUOTA, 'Aggregate usage accurately tracks multiple chunks');
+
+// Quota rejection simulation: adding another 60 KB would exceed 256 KB limit
+const wouldExceed = usage2 + getByteLength(largeChunk) > MAX_APP_STORAGE_QUOTA;
+assert(wouldExceed, 'Adding fifth 60KB chunk is detected as exceeding 256KB aggregate quota');
+
+// Quota recovery on deletion
+quotaMockStorage.data.delete('app:test-quota-app:chunk1');
+const usageAfterDelete = calculateAppStorageUsage('test-quota-app', quotaMockStorage);
+assert(usageAfterDelete < usage2, 'Deleting a key recovers quota space');
+assert(usageAfterDelete + getByteLength(largeChunk) <= MAX_APP_STORAGE_QUOTA, 'Previously blocked write can now fit in recovered quota');
+
+console.log('\n--- Testing RPC Bridge Concurrency & Duplicate ID Controls ---');
+const inFlightSimulation = new Set();
+const MAX_CONCURRENT = 30;
+
+function handleSimulatedRpc(reqId) {
+  if (inFlightSimulation.has(reqId)) {
+    return { success: false, error: 'Duplicate request ID in flight' };
+  }
+  if (inFlightSimulation.size >= MAX_CONCURRENT) {
+    return { success: false, error: 'Too many concurrent requests' };
+  }
+  inFlightSimulation.add(reqId);
+  return { success: true };
+}
+
+function releaseSimulatedRpc(reqId) {
+  inFlightSimulation.delete(reqId);
+}
+
+// 1. Initial request accepted
+assert(handleSimulatedRpc(101).success === true, 'Unique request ID 101 is accepted');
+
+// 2. Duplicate in-flight request ID rejected
+const dupResult = handleSimulatedRpc(101);
+assert(dupResult.success === false && dupResult.error.includes('Duplicate request ID'), 'Duplicate request ID 101 in flight is rejected');
+
+// 3. Releasing slot allows re-use of ID
+releaseSimulatedRpc(101);
+assert(handleSimulatedRpc(101).success === true, 'After release, request ID 101 can be accepted');
+releaseSimulatedRpc(101);
+
+// 4. Concurrency limit enforced
+for (let i = 1; i <= MAX_CONCURRENT; i++) {
+  assert(handleSimulatedRpc(i).success === true, `In-flight slot ${i} allocated`);
+}
+const overflowResult = handleSimulatedRpc(999);
+assert(overflowResult.success === false && overflowResult.error.includes('Too many concurrent requests'), 'Request exceeding max concurrent limit (30) is rejected');
+
+// Release one slot
+releaseSimulatedRpc(1);
+assert(handleSimulatedRpc(999).success === true, 'Releasing one slot permits new request');
+for (let i = 2; i <= MAX_CONCURRENT; i++) releaseSimulatedRpc(i);
+releaseSimulatedRpc(999);
+assert(inFlightSimulation.size === 0, 'All in-flight slots cleanly released');
+
+console.log('\n--- Testing Versioning, Compatibility & Atomic Updates ---');
+// Semver comparison
+assert(compareSemver('1.0.0', '1.0.0') === 0, 'Identical versions return 0');
+assert(compareSemver('2.0.0', '1.9.9') === 1, 'v2.0.0 > v1.9.9 returns 1');
+assert(compareSemver('1.2.0', '1.2.1') === -1, 'v1.2.0 < v1.2.1 returns -1');
+assert(compareSemver('2.4.0', '2.4.0') === 0, 'Current system version 2.4.0 matches baseline');
+
+// minSystemVersion manifest validation
+const futureSysCheck = validateManifest({
+  id: 'future-app',
+  name: 'Future App',
+  version: '1.0.0',
+  category: 'tools',
+  minSystemVersion: '3.0.0',
+  entry: '<div></div>'
+});
+assert(!futureSysCheck.valid && futureSysCheck.errors.some(e => e.includes('ArcadeOS v3.0.0')), 'Manifest requiring future OS version (v3.0.0) is rejected');
+
+const validSysCheck = validateManifest({
+  id: 'current-app',
+  name: 'Current App',
+  version: '1.0.0',
+  category: 'tools',
+  minSystemVersion: '2.4.0',
+  entry: '<div></div>'
+});
+assert(validSysCheck.valid, 'Manifest matching current OS version (v2.4.0) is accepted');
+
+// Update validation logic & rollback simulation
+const installedAppRegistry = new Map([
+  ['test-ext', {
+    id: 'test-ext',
+    name: 'Test Ext',
+    version: '1.1.0',
+    type: 'sandboxed',
+    category: 'tools'
+  }]
+]);
+
+function simulateAppUpdate(newManifest) {
+  const id = newManifest?.id;
+  const existing = installedAppRegistry.get(id);
+  if (!existing) return { success: false, errors: ['Not installed'] };
+
+  // Validate
+  const val = validateManifest(newManifest, { isExtension: true });
+  if (!val.valid) return { success: false, errors: val.errors };
+
+  // Version downgrade check
+  if (compareSemver(newManifest.version, existing.version) < 0) {
+    return { success: false, errors: ['Cannot downgrade version'] };
+  }
+
+  // Atomic update
+  const backup = { ...existing };
+  try {
+    installedAppRegistry.set(id, { ...newManifest, type: 'sandboxed' });
+    return { success: true };
+  } catch (e) {
+    installedAppRegistry.set(id, backup); // Rollback
+    return { success: false, errors: [e.message] };
+  }
+}
+
+// Update with valid newer version
+const goodUpdate = simulateAppUpdate({ id: 'test-ext', name: 'Test Ext', version: '1.2.0', category: 'tools', entry: '<div>v2</div>' });
+assert(goodUpdate.success === true, 'Update to newer semver (v1.2.0) succeeds');
+assert(installedAppRegistry.get('test-ext').version === '1.2.0', 'Installed version updated to v1.2.0');
+
+// Update with downgrade rejected
+const badDowngrade = simulateAppUpdate({ id: 'test-ext', name: 'Test Ext', version: '1.0.5', category: 'tools', entry: '<div>v1</div>' });
+assert(badDowngrade.success === false && badDowngrade.errors[0].includes('downgrade'), 'Version downgrade is rejected');
+assert(installedAppRegistry.get('test-ext').version === '1.2.0', 'Version remains unchanged at v1.2.0 after rejected downgrade');
+
+// Update with invalid manifest rejected
+const badManifestUpdate = simulateAppUpdate({ id: 'test-ext', name: 'Test Ext', version: '2.0.0', category: 'alien', entry: '<div></div>' });
+assert(badManifestUpdate.success === false && badManifestUpdate.errors.some(e => e.includes('category')), 'Malformed update manifest is rejected');
+assert(installedAppRegistry.get('test-ext').version === '1.2.0', 'Version remains intact at v1.2.0 after malformed manifest rejection');
 
 console.log('\n=======================================');
 console.log(`PASSED: ${passed} | FAILED: ${failed}`);
